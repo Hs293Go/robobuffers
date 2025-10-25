@@ -1,0 +1,11 @@
+include "core/header.fbs";
+include "geom/wrench.fbs";
+
+namespace robo.geom_msgs;
+
+table WrenchStamped {
+  header: robo.core_msgs.Header;
+  wrench: Wrench;
+}
+
+root_type WrenchStamped;

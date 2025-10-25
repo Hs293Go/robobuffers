@@ -1,0 +1,12 @@
+
+include "core/header.fbs";
+include "geom/pose.fbs";
+
+namespace robo.geom_msgs;
+
+table PoseStamped {
+  header: robo.core_msgs.Header;
+  pose: Pose;
+}
+
+root_type PoseStamped;

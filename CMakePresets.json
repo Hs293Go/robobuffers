@@ -1,0 +1,95 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+
+    {
+      "name": "warn-flags",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Wnon-virtual-dtor"
+      }
+    },
+
+    {
+      "name": "sanitize",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_CONFIGURATION_TYPES": "Debug;Release;Sanitize",
+        "CMAKE_CXX_FLAGS_SANITIZE": "-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_LINKER_FLAGS_SANITIZE": "-fsanitize=address,undefined"
+      }
+    },
+
+    {
+      "name": "default",
+      "inherits": ["base", "warn-flags"],
+      "displayName": "Default (Debug/Release)",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
+      "name": "sanitize-build",
+      "inherits": ["base", "warn-flags", "sanitize"],
+      "displayName": "Sanitize (ASan/UBSan)",
+      "description": "Enables AddressSanitizer + UndefinedBehaviorSanitizer",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    }
+  ],
+
+  "buildPresets": [
+    {
+      "name": "debug",
+      "displayName": "Build Debug",
+      "configurePreset": "default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "displayName": "Build Release",
+      "configurePreset": "default",
+      "configuration": "Release"
+    },
+    {
+      "name": "sanitize",
+      "displayName": "Build with Sanitizers",
+      "configurePreset": "sanitize-build",
+      "configuration": "Sanitize"
+    }
+  ],
+
+  "testPresets": [
+    {
+      "name": "test",
+      "displayName": "Run tests (Debug)",
+      "configurePreset": "default",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    },
+    {
+      "name": "test-sanitize",
+      "displayName": "Run tests (Sanitize)",
+      "configurePreset": "sanitize-build",
+      "configuration": "Sanitize",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error" }
+    }
+  ]
+}

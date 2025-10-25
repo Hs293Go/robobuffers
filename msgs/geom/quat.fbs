@@ -1,0 +1,8 @@
+namespace robo.geom_msgs;
+
+struct Quat {
+  x: float;
+  y: float;
+  z: float;
+  w: float;
+}

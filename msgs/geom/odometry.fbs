@@ -1,0 +1,13 @@
+include "core/header.fbs";
+include "geom/pose.fbs";
+include "geom/twist.fbs";
+
+namespace robo.geom_msgs;
+
+table Odometry {
+  header: robo.core_msgs.Header;
+  pose: Pose;
+  twist: Twist;
+}
+
+root_type Odometry;

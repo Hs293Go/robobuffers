@@ -1,0 +1,12 @@
+include "geom/vec3.fbs";
+include "geom/quat.fbs";
+
+namespace robo.geom_msgs;
+
+table Pose {
+  position: Vec3;
+  orientation: Quat;
+  covariance: [float];
+}
+
+root_type Pose;

@@ -1,0 +1,8 @@
+namespace robo.core_msgs;
+
+table Header {
+  stamp_us: ulong;
+  frame_id: string;
+}
+
+root_type Header;

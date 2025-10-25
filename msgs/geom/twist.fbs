@@ -1,0 +1,11 @@
+include "geom/vec3.fbs";
+
+namespace robo.geom_msgs;
+
+table Twist {
+  linear: Vec3;
+  angular: Vec3;
+  covariance: [float];
+}
+
+root_type Twist;

@@ -1,0 +1,11 @@
+include "core/header.fbs";
+include "geom/twist.fbs";
+
+namespace robo.geom_msgs;
+
+table TwistStamped {
+  header: robo.core_msgs.Header;
+  twist: Twist;
+}
+
+root_type TwistStamped;

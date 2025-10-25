@@ -1,0 +1,11 @@
+include "core/header.fbs";
+include "geom/accel.fbs";
+
+namespace robo.geom_msgs;
+
+table AccelStamped {
+  header: robo.core_msgs.Header;
+  accel: Accel;
+}
+
+root_type AccelStamped;

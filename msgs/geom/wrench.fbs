@@ -1,0 +1,11 @@
+include "geom/vec3.fbs";
+
+namespace robo.geom_msgs;
+
+table Wrench {
+  force: Vec3;
+  torque: Vec3;
+  covariance: [float];
+}
+
+root_type Wrench;

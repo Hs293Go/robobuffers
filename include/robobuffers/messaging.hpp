@@ -31,8 +31,13 @@ class Context {
   Context(int io_threads) : context_(io_threads) {}
 
   template <typename Msg>
-  Subscriber<Msg> subscribe(const std::string& endpoint,
-                            typename Subscriber<Msg>::Callback cb,
+  Subscriber<Msg> subscribe(const std::string& endpoint, void (*cb)(const Msg&),
+                            SubOptions opts = {}) {
+    return Subscriber<Msg>(*this, endpoint, cb, std::move(opts));
+  }
+
+  template <typename Msg, typename Callback>
+  Subscriber<Msg> subscribe(const std::string& endpoint, Callback cb,
                             SubOptions opts = {}) {
     return Subscriber<Msg>(*this, endpoint, std::move(cb), std::move(opts));
   }

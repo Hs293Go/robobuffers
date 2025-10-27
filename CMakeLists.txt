@@ -2,13 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 project(robobuffers LANGUAGES CXX)
 
 option(ROBOBUFFERS_BUILD_TESTING "Build robobuffers tests" ON)
+option(ROBOBUFFERS_BUILD_EXAMPLES "Build robobuffers examples" ON)
 
 find_package(Eigen3 REQUIRED)
 
 add_subdirectory(third_party SYSTEM)
-
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(ZMQ REQUIRED libzmq)
 
 # --- FlatBuffers code generation
 set(ROBOBUFFERS_CODEGEN_BASE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
@@ -72,14 +70,13 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/converters.hpp)
 target_compile_features(robobuffers_robobuffers INTERFACE cxx_std_20)
 target_link_libraries(robobuffers_robobuffers INTERFACE robobuffers::msgs
-                                                        Eigen3::Eigen)
+                                                        Eigen3::Eigen cppzmq)
 add_library(robobuffers::robobuffers ALIAS robobuffers_robobuffers)
 
 # --- Example
-add_executable(pose_pubsub examples/pose_pubsub.cpp)
-target_link_libraries(pose_pubsub PRIVATE robobuffers::robobuffers
-                                          ${ZMQ_LIBRARIES})
-target_include_directories(pose_pubsub PRIVATE ${ZMQ_INCLUDE_DIRS})
+if(ROBOBUFFERS_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()
 
 include(CTest)
 set(BUILD_TESTING ${ROBOBUFFERS_BUILD_TESTING})

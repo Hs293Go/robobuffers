@@ -6,18 +6,19 @@
 #include "robobuffers/messaging.hpp"
 
 using namespace std::chrono_literals;
-void poseStampedCallback(const robo::geom_msgs::Pose& msg) {
+void poseStampedCallback(const robo::geom_msgs::PoseStamped& msg) {
   auto res = robo::FromMessage(msg);
   if (!res) {
     std::cerr << "Error converting Pose message: "
               << static_cast<int>(res.error()) << "\n";
     return;
   }
-  auto transform = res.value().transform;
+  const auto& [time_us, _, transform] = res.value();
   std::cout << "Received PoseStamped:\n"
-            << "  translation: " << transform.translation().transpose() << "\n"
+            << "  translation: "
+            << transform.transform.translation().transpose() << "\n"
             << "  rotation (xyzw): "
-            << transform.rotation().coeffs().transpose() << "\n";
+            << transform.transform.rotation().coeffs().transpose() << "\n";
 }
 
 void SubscriberThread(robo::Context& context) {
@@ -34,6 +35,7 @@ void SubscriberThread(robo::Context& context) {
 
 int main() {
   robo::Context context(1);
+  context.enableLogDebug();
   std::jthread sub_thread(SubscriberThread, std::ref(context));
   return 0;
 }

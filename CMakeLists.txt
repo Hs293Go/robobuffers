@@ -5,6 +5,7 @@ option(ROBOBUFFERS_BUILD_TESTING "Build robobuffers tests" ON)
 option(ROBOBUFFERS_BUILD_EXAMPLES "Build robobuffers examples" ON)
 
 find_package(Eigen3 REQUIRED)
+find_package(spdlog REQUIRED)
 
 add_subdirectory(third_party SYSTEM)
 
@@ -69,8 +70,9 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/messaging.hpp
             ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/converters.hpp)
 target_compile_features(robobuffers_robobuffers INTERFACE cxx_std_20)
-target_link_libraries(robobuffers_robobuffers INTERFACE robobuffers::msgs
-                                                        Eigen3::Eigen cppzmq)
+target_link_libraries(
+  robobuffers_robobuffers INTERFACE robobuffers::msgs Eigen3::Eigen cppzmq
+                                    spdlog::spdlog)
 add_library(robobuffers::robobuffers ALIAS robobuffers_robobuffers)
 
 # --- Example

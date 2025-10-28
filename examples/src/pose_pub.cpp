@@ -13,14 +13,15 @@ void PublisherThread(robo::Context& context) {
   std::this_thread::sleep_for(500ms);  // allow subscriber to connect
 
   robo::Publisher pub =
-      context.advertise<robo::geom_msgs::Pose>("tcp://*:5555", opts);
+      context.advertise<robo::geom_msgs::PoseStamped>("tcp://*:5555", opts);
   while (true) {
     flatbuffers::FlatBufferBuilder fbb;
 
     robo::TransformF32 transform(Eigen::Vector3f(1.0f, 2.0f, 3.0f),
                                  Eigen::Quaternionf::UnitRandom());
 
-    auto pose = robo::ToMessage(fbb, transform);  // convert to Pose message
+    auto pose = robo::ToMessage(fbb, std::chrono::system_clock::now(),
+                                transform);  // convert to Pose message
     std::cout << "Publishing PoseStamped\n";
     pub.publish(fbb, pose);
     std::this_thread::sleep_for(1s);
@@ -29,6 +30,7 @@ void PublisherThread(robo::Context& context) {
 
 int main() {
   robo::Context context(1);
+  context.enableLogDebug();
   std::jthread pub_thread(PublisherThread, std::ref(context));
   return 0;
 }

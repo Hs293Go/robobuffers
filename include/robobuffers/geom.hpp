@@ -2,26 +2,9 @@
 #define ROBOBUFFERS_GEOM_HPP_
 
 #include "Eigen/Dense"
+#include "robobuffers/concepts.hpp"
 
 namespace robo {
-
-template <typename Derived>
-concept EigenMatrixLike = requires {
-  typename Derived::Scalar;
-  { Derived::RowsAtCompileTime } -> std::convertible_to<int>;
-  { Derived::ColsAtCompileTime } -> std::convertible_to<int>;
-  { Derived::IsVectorAtCompileTime } -> std::convertible_to<bool>;
-};
-
-template <typename Derived>
-concept Vector3Like = EigenMatrixLike<Derived> &&
-                      static_cast<bool>(Derived::IsVectorAtCompileTime) &&
-                      Derived::RowsAtCompileTime == 3;
-
-template <typename Derived>
-concept Matrix4Like =
-    EigenMatrixLike<Derived> && Derived::RowsAtCompileTime == 4 &&
-    Derived::ColsAtCompileTime == 4;
 
 template <typename T>
 Eigen::Matrix3<T> hat(const Eigen::Vector3<T>& v) {
@@ -145,6 +128,9 @@ struct TransformTraits<Transform<T>> {
   using Quaternion = Eigen::Quaternion<T>;
 };
 
+template <typename Derived>
+class TwistBase;
+
 template <typename T>
 class Transform : public TransformBase<Transform<T>> {
  public:
@@ -171,6 +157,9 @@ class Transform : public TransformBase<Transform<T>> {
 
   Eigen::Vector3<T>& translation() { return translation_; }
   Eigen::Quaternion<T>& rotation() { return rotation_; }
+
+  template <typename Derived>
+  static Transform exp(const TwistBase<Derived>& twist);
 
  private:
   Eigen::Vector3<T> translation_ = Eigen::Vector3<T>::Zero();

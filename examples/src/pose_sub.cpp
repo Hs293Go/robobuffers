@@ -26,9 +26,13 @@ void SubscriberThread(robo::Context& context) {
   opts.queue_size = 5;
   opts.topic = "pose";
 
+  auto endpoint = robo::EndpointBuilder(robo::Transport::kTcp)
+                      .port(5555)
+                      .mode(robo::ConnMode::kConnect)
+                      .build();
   // Subscriber handles deserialization and callback invocation
   robo::Subscriber sub =
-      context.subscribe("tcp://localhost:5555", poseStampedCallback, opts);
+      context.subscribe(endpoint.value(), poseStampedCallback, opts);
 
   sub.spin();  // Blocking receive loop with callback
 }

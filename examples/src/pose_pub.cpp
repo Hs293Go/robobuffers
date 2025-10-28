@@ -8,12 +8,20 @@
 using namespace std::chrono_literals;
 
 void PublisherThread(robo::Context& context) {
-  robo::PubOptions opts{.queue_size = 5, .latch = false, .topic = "pose"};
+  robo::PubOptions opts{.queue_size = 5, .topic = "pose"};
 
   std::this_thread::sleep_for(500ms);  // allow subscriber to connect
 
+  auto endpoint = robo::EndpointBuilder(robo::Transport::kTcp)
+                      .port(5555)
+                      .mode(robo::ConnMode::kBind)
+                      .build();
+  if (!endpoint) {
+    std::cerr << "Error building endpoint\n";
+    return;
+  }
   robo::Publisher pub =
-      context.advertise<robo::geom_msgs::PoseStamped>("tcp://*:5555", opts);
+      context.advertise<robo::geom_msgs::PoseStamped>(endpoint.value(), opts);
   while (true) {
     flatbuffers::FlatBufferBuilder fbb;
 

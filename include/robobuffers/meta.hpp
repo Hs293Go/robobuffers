@@ -21,6 +21,15 @@ concept Vector3Like = EigenMatrixLike<Derived> &&
                       static_cast<bool>(Derived::IsVectorAtCompileTime) &&
                       Derived::RowsAtCompileTime == 3;
 
+[[noreturn]] inline void unreachable() {
+#if defined(__GNUC__) || defined(__clang__)
+  __builtin_unreachable();
+#elif defined(_MSC_VER)
+  __assume(false);
+#else
+  std::terminate();
+#endif
+}
 }  // namespace robo
 
 #endif  // ROBOBUFFERS_CONCEPTS_HPP_

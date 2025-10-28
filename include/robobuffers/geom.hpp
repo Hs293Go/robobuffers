@@ -2,7 +2,7 @@
 #define ROBOBUFFERS_GEOM_HPP_
 
 #include "Eigen/Dense"
-#include "robobuffers/concepts.hpp"
+#include "robobuffers/meta.hpp"
 
 namespace robo {
 

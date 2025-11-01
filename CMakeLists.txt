@@ -60,15 +60,20 @@ set_target_properties(robobuffers_msgs PROPERTIES EXPORT_NAME msgs)
 add_library(robobuffers_robobuffers INTERFACE)
 target_sources(
   robobuffers_robobuffers
-  INTERFACE FILE_SET
-            HEADERS
-            BASE_DIRS
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            FILES
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/geom.hpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/expected.hpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/messaging.hpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/converters.hpp)
+  INTERFACE
+    FILE_SET
+    HEADERS
+    BASE_DIRS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/geom.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/expected.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/third_party/tl/expected.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/third_party/concurrentqueue.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/messaging.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/converters.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/meta.hpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/robobuffers/thread_pool.hpp)
 target_compile_features(robobuffers_robobuffers INTERFACE cxx_std_20)
 target_link_libraries(
   robobuffers_robobuffers INTERFACE robobuffers::msgs Eigen3::Eigen cppzmq

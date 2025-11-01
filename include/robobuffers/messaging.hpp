@@ -2,15 +2,18 @@
 #define ROBOBUFFERS_MESSAGING_HPP_
 
 #include <string>
+#include <utility>
 
 #include "flatbuffers/flatbuffer_builder.h"
 #include "flatbuffers/verifier.h"
-#include "robobuffers/meta.hpp"
 #include "robobuffers/expected.hpp"
-#include "spdlog/fmt/fmt.h"
+#include "robobuffers/meta.hpp"
+#include "robobuffers/thread_pool.hpp"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include "zmq.hpp"
+
+using std::chrono_literals::operator""ms;
 
 namespace robo {
 
@@ -143,6 +146,83 @@ struct SubOptions {
   std::string topic;
 };
 
+class IExecutor {
+ public:
+  virtual ~IExecutor() = default;
+
+  virtual void submit(std::function<void()> job) = 0;
+};
+
+class ThreadPoolExecutor : public robo::IExecutor {
+ public:
+  explicit ThreadPoolExecutor(robo::ThreadPoolMpmc<>& pool) : pool_(pool) {}
+
+  void submit(std::function<void()> job) override {
+    std::ignore = pool_.enqueue(std::move(job));
+  }
+
+ private:
+  robo::ThreadPoolMpmc<>& pool_;
+};
+
+}  // namespace robo
+
+namespace fmt {
+template <>
+struct formatter<robo::Endpoint> : formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const robo::Endpoint& endpoint, FormatContext& ctx) {
+    return fmt::format_to(ctx.out(), "{}", endpoint.str());
+  }
+};
+
+template <>
+struct formatter<robo::ConnMode> : formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const robo::ConnMode& mode, FormatContext& ctx) {
+    std::string mode_str;
+    switch (mode) {
+      case robo::ConnMode::kBind:
+        mode_str = "bind";
+        break;
+      case robo::ConnMode::kConnect:
+        mode_str = "connect";
+        break;
+    }
+    return fmt::format_to(ctx.out(), "{}", mode_str);
+  }
+};
+
+template <>
+struct formatter<robo::SubOptions> : formatter<std::string_view> {
+  template <typename FormatContext>
+  auto format(const robo::SubOptions& opts, FormatContext& ctx) {
+    return fmt::format_to(ctx.out(),
+                          "{{queue_size={}, linger_ms={}, immediate={}, "
+                          "tcp_keepalive={}, conflate={}, topic='{}'}}",
+                          opts.queue_size, opts.linger_ms, opts.immediate,
+                          opts.tcp_keepalive, opts.conflate, opts.topic);
+  }
+};
+
+template <>
+struct formatter<robo::PubOptions> : formatter<std::string_view> {
+  constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+  template <typename FormatContext>
+  auto format(const robo::PubOptions& opts, FormatContext& ctx) {
+    return fmt::format_to(ctx.out(),
+                          "{{queue_size={}, linger_ms={}, immediate={}, "
+                          "tcp_keepalive={}, topic='{}'}}",
+                          opts.queue_size, opts.linger_ms, opts.immediate,
+                          opts.tcp_keepalive, opts.topic);
+  }
+};
+
+}  // namespace fmt
+
+namespace robo {
+
 template <FlatbuffersTable Msg>
 class Subscriber;
 
@@ -151,12 +231,23 @@ class Publisher;
 
 class Context {
  public:
+  static constexpr std::size_t kDefaultThreadCount = 4;
   explicit Context(int io_threads = 1) : context_(io_threads) {
     if (auto existing = spdlog::get("robo")) {
       logger_ = existing;
     } else {
       logger_ = spdlog::stdout_color_mt("robo");
     }
+  }
+
+  template <FlatbuffersTable Msg, typename Callback>
+  Subscriber<Msg> subscribe(const Endpoint& endpoint, Callback cb,
+                            SubOptions opts = {}) {
+    logger_->debug("Creating subscriber for endpoint {} with options {}",
+                   endpoint, opts);
+    auto exec = std::make_shared<ThreadPoolMpmc<>>(kDefaultThreadCount);
+    return Subscriber<Msg>(*this, endpoint, std::move(cb), std::move(exec),
+                           std::move(opts));
   }
 
   /**
@@ -169,10 +260,22 @@ class Context {
    */
   template <FlatbuffersTable Msg, typename Callback>
   Subscriber<Msg> subscribe(const Endpoint& endpoint, Callback cb,
+                            std::shared_ptr<IExecutor> exec,
                             SubOptions opts = {}) {
     logger_->debug("Creating subscriber for endpoint {} with options {}",
                    endpoint, opts);
-    return Subscriber<Msg>(*this, endpoint, std::move(cb), std::move(opts));
+    return Subscriber<Msg>(*this, endpoint, std::move(cb), std::move(exec),
+                           std::move(opts));
+  }
+
+  template <FlatbuffersTable Msg>
+  Subscriber<Msg> subscribe(const Endpoint& endpoint, void (*cb)(const Msg&),
+                            SubOptions opts = {}) {
+    logger_->debug("Creating subscriber for endpoint {} with options {}",
+                   endpoint, opts);
+    auto exec = std::make_shared<ThreadPoolMpmc<>>(kDefaultThreadCount);
+    return Subscriber<Msg>(*this, endpoint, cb, std::move(exec),
+                           std::move(opts));
   }
 
   /**
@@ -187,10 +290,12 @@ class Context {
    */
   template <FlatbuffersTable Msg>
   Subscriber<Msg> subscribe(const Endpoint& endpoint, void (*cb)(const Msg&),
+                            std::shared_ptr<IExecutor> exec,
                             SubOptions opts = {}) {
     logger_->debug("Creating subscriber for endpoint {} with options {}",
                    endpoint, opts);
-    return Subscriber<Msg>(*this, endpoint, cb, std::move(opts));
+    return Subscriber<Msg>(*this, endpoint, cb, std::move(exec),
+                           std::move(opts));
   }
 
   template <FlatbuffersTable Msg>
@@ -273,7 +378,35 @@ struct TopicAndContent {
 
 class SubscriberBase {
  protected:
-  SubOptions opts_;
+  SubscriberBase(Context& ctx, const Endpoint& endpoint, SubOptions opts = {})
+      : opts_(std::move(opts)),
+        socket_(ctx.context_, zmq::socket_type::sub),
+        control_(ctx.context_, zmq::socket_type::pair),
+        logger_(ctx.logger_) {
+    std::string ctrl_name =
+        "inproc://ctrl_" +
+        std::to_string(reinterpret_cast<std::uintptr_t>(this));
+    control_.bind(ctrl_name);
+    control_endpoint_ = std::move(ctrl_name);
+
+    socket_.set(zmq::sockopt::rcvhwm, opts_.queue_size);
+    socket_.set(zmq::sockopt::linger, opts_.linger_ms);
+    socket_.set(zmq::sockopt::immediate, opts_.immediate);
+    socket_.set(zmq::sockopt::tcp_keepalive, opts_.tcp_keepalive);
+    if (opts_.conflate) {
+      socket_.set(zmq::sockopt::conflate, 1);
+    }
+
+    if (endpoint.mode() == ConnMode::kBind) {
+      socket_.bind(endpoint.str());
+      logger_->debug("SUB bind {}", endpoint.str());
+    } else {
+      socket_.connect(endpoint.str());
+      logger_->debug("SUB connect {}", endpoint.str());
+    }
+
+    socket_.set(zmq::sockopt::subscribe, opts_.topic);
+  }
 
   expected<TopicAndContent, PubSubError> receiveRaw() {
     TopicAndContent result;
@@ -297,31 +430,18 @@ class SubscriberBase {
     return result;
   }
 
-  SubscriberBase(Context& ctx, const Endpoint& endpoint, SubOptions opts = {})
-      : opts_(std::move(opts)),
-        socket_(ctx.context_, zmq::socket_type::sub),
-        logger_(ctx.logger_) {
-    socket_.set(zmq::sockopt::rcvhwm, opts_.queue_size);
-    socket_.set(zmq::sockopt::linger, opts_.linger_ms);
-    socket_.set(zmq::sockopt::immediate, opts_.immediate);
-    socket_.set(zmq::sockopt::tcp_keepalive, opts_.tcp_keepalive);
-    if (opts_.conflate) {
-      socket_.set(zmq::sockopt::conflate, 1);
-    }
-
-    if (endpoint.mode() == ConnMode::kBind) {
-      socket_.bind(endpoint.str());
-      logger_->debug("SUB bind {}", endpoint.str());
-    } else {
-      socket_.connect(endpoint.str());
-      logger_->debug("SUB connect {}", endpoint.str());
-    }
-
-    socket_.set(zmq::sockopt::subscribe, opts_.topic);
+  void signalStop(Context& ctx) {
+    zmq::socket_t sender(ctx.context_, zmq::socket_type::pair);
+    sender.connect(control_endpoint_);
+    sender.send(zmq::str_buffer("stop"), zmq::send_flags::none);
   }
 
+  SubOptions opts_;
   zmq::socket_t socket_;
+  zmq::socket_t control_;
   std::shared_ptr<spdlog::logger> logger_;
+  std::atomic_bool stop_ = false;
+  std::string control_endpoint_;
 };
 
 template <FlatbuffersTable Msg>
@@ -330,17 +450,43 @@ class Subscriber : public SubscriberBase {
   using Callback = std::function<void(const Msg&)>;
 
   Subscriber(Context& ctx, const Endpoint& endpoint, Callback cb,
-             SubOptions opts = {})
+             std::shared_ptr<IExecutor> exec, SubOptions opts = {})
       : SubscriberBase(ctx, endpoint, std::move(opts)),
-        callback_(std::move(cb)) {}
+        callback_(std::move(cb)),
+        exec_(std::move(exec)) {}
 
   void spin() {
-    while (true) {
+    zmq::pollitem_t items[] = {{.socket = static_cast<void*>(socket_),
+                                .fd = 0,
+                                .events = ZMQ_POLLIN,
+                                .revents = 0},
+                               {.socket = static_cast<void*>(control_),
+                                .fd = 0,
+                                .events = ZMQ_POLLIN,
+                                .revents = 0}};
+
+    while (!stop_) {
+      // Wait for incoming messages or control events
+      zmq::poll(items, 2, 50ms);
+
+      if (items[1].revents & ZMQ_POLLIN) {
+        zmq::message_t ctrl;
+        std::ignore = control_.recv(ctrl, zmq::recv_flags::none);
+        logger_->debug("Received stop signal");
+        stop_ = true;
+        break;
+      }
+
+      if (!(items[0].revents & ZMQ_POLLIN)) {
+        continue;
+      }
+
       auto res = receiveRaw();
       if (!res) {
         continue;
       }
-      const auto& [topic, content] = res.value();
+
+      auto [topic, content] = std::move(res.value());
 
       flatbuffers::Verifier verifier(
           reinterpret_cast<const uint8_t*>(content.data()), content.size());
@@ -349,70 +495,28 @@ class Subscriber : public SubscriberBase {
         continue;
       }
 
-      const auto root = flatbuffers::GetRoot<Msg>(content.data());
-      callback_(*root);
+      const Msg* root = flatbuffers::GetRoot<Msg>(content.data());
+      exec_->submit([cb = callback_, logger = logger_, top = std::move(topic),
+                     root = root]() mutable {
+        try {
+          cb(*root);
+        } catch (const std::exception& e) {
+          logger->error("Exception in callback for '{}': {}", top, e.what());
+        } catch (...) {
+          logger->error("Unknown exception in callback for '{}'", top);
+        }
+      });
     }
+
+    logger_->info("Subscriber stopped cleanly.");
   }
 
  private:
   friend class Context;
 
   Callback callback_;
+  std::shared_ptr<IExecutor> exec_;
 };
 }  // namespace robo
-
-namespace fmt {
-template <>
-struct formatter<robo::Endpoint> : formatter<std::string_view> {
-  template <typename FormatContext>
-  auto format(const robo::Endpoint& endpoint, FormatContext& ctx) {
-    return format_to(ctx.out(), "{}", endpoint.str());
-  }
-};
-
-template <>
-struct formatter<robo::ConnMode> : formatter<std::string_view> {
-  template <typename FormatContext>
-  auto format(const robo::ConnMode& mode, FormatContext& ctx) {
-    std::string mode_str;
-    switch (mode) {
-      case robo::ConnMode::kBind:
-        mode_str = "bind";
-        break;
-      case robo::ConnMode::kConnect:
-        mode_str = "connect";
-        break;
-    }
-    return format_to(ctx.out(), "{}", mode_str);
-  }
-};
-
-template <>
-struct formatter<robo::SubOptions> : formatter<std::string_view> {
-  template <typename FormatContext>
-  auto format(const robo::SubOptions& opts, FormatContext& ctx) {
-    return format_to(ctx.out(),
-                     "{{queue_size={}, linger_ms={}, immediate={}, "
-                     "tcp_keepalive={}, conflate={}, topic='{}'}}",
-                     opts.queue_size, opts.linger_ms, opts.immediate,
-                     opts.tcp_keepalive, opts.conflate, opts.topic);
-  }
-};
-
-template <>
-struct formatter<robo::PubOptions> : formatter<std::string_view> {
-  constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-
-  template <typename FormatContext>
-  auto format(const robo::PubOptions& opts, FormatContext& ctx) {
-    return format_to(ctx.out(),
-                     "{{queue_size={}, linger_ms={}, immediate={}, "
-                     "tcp_keepalive={}, topic='{}'}}",
-                     opts.queue_size, opts.linger_ms, opts.immediate,
-                     opts.tcp_keepalive, opts.topic);
-  }
-};
-
-}  // namespace fmt
 
 #endif  // ROBOBUFFERS_MESSAGING_HPP_
